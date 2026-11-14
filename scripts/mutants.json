@@ -314,13 +314,13 @@
   {
     "name": "no confirmation read",
     "file": "src/app.js",
-    "from": "    this.afterRecentRead(startMono, now, heldBefore);\n",
+    "from": "    this.afterRecentRead(startMono, now, heldBefore, parsed);\n",
     "to": "\n"
   },
   {
     "name": "a confirmation never done",
     "file": "src/app.js",
-    "from": "      if (startMono >= due) {",
+    "from": "      if (parsed.days.has(c.day)) {",
     "to": "      if (false) {"
   },
   {
@@ -352,5 +352,17 @@
     "file": "src/app.js",
     "from": "return both(this.pause.code === 'rate_limited' ? 'testPaused' : 'testServer', {",
     "to": "return both('testPaused', {"
+  },
+  {
+    "name": "a day no longer whole on the confirmation kept",
+    "file": "src/app.js",
+    "from": "        if (h > now && localDate(h) === c.day) {",
+    "to": "        if (false) {"
+  },
+  {
+    "name": "capPause disabled",
+    "file": "src/app.js",
+    "from": "    if (this.pause.due - mono <= cap) return;",
+    "to": "    return;"
   }
 ]

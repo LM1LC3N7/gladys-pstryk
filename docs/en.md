@@ -88,8 +88,11 @@ is not confirmed on a real account: a Polish day is kept only whole (every
 one of its hours priced, 23 or 25 on the days the clocks change) and not one
 value repeated over more than 90 % of it (what Pstryk may answer before
 tomorrow's prices are published); a provisional answer that passes this rule
-is replaced by the confirmation read in the hours not started yet, an hour
-already started keeps the price kept for it. When one hour of a billing period has no price,
+is replaced by the confirmation read in the hours not started yet if Pstryk
+gives the real prices by then (when that read no longer gives the day whole,
+its hours to come are dropped and read again hourly until whole); an hour
+already started keeps the price kept for it. A provisional answer that lasts
+past the confirmation is kept as such. When one hour of a billing period has no price,
 Gladys's whole request for that period fails and no cost is stored for it
 until the price is known: the integration reads the missing past days again
 (up to 31 days back, at most every 6 hours), for instance after Gladys was

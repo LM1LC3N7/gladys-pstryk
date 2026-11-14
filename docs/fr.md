@@ -100,8 +100,11 @@ qu'entière (chacune de ses heures a un prix, 23 ou 25 les jours de changement
 d'heure) et sans une même valeur répétée sur plus de 90 % de ses heures (ce
 que Pstryk peut répondre avant la publication des prix de demain) ; une
 réponse provisoire qui passe cette règle est remplacée par la lecture de
-confirmation dans les heures pas encore commencées, une heure déjà commencée
-garde le prix gardé pour elle. Quand
+confirmation dans les heures pas encore commencées si Pstryk donne les vrais
+prix d'ici là (quand cette lecture ne rend plus la journée entière, ses heures
+à venir sont retirées et relues chaque heure jusqu'à une journée entière) ;
+une heure déjà commencée garde le prix gardé pour elle. Une réponse
+provisoire qui dure au-delà de la confirmation est gardée telle quelle. Quand
 une heure d'une période de facturation n'a pas de prix, toute la demande de
 Gladys pour cette période échoue et aucun coût n'est enregistré tant que le
 prix n'est pas connu : l'intégration relit les jours passés manquants

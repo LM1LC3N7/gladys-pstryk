@@ -954,3 +954,55 @@ test('an outage lasting past midnight: today read again within the hour, not aft
   await env.wait(HOUR + MINUTE);
   assert.equal(env.app.priceAt(env.clock.now), P.priceOf(env.clock.now - (env.clock.now % HOUR)));
 });
+
+test('the confirmation finds the day no longer whole: its hours to come dropped, read hourly until whole', async (t) => {
+  const tomorrow = fromLocal(2026, 11, 12);
+  const provisional = (h) => (local(h).h >= 8 && local(h).h < 22 ? 0.95 : 0.55);
+  // 14:00 provisional, 17:00 nothing, from 17:30 the real prices.
+  const pstryk = createPstryk({
+    pricing: ({ query }, now) =>
+      P.pricing({
+        from: Date.parse(query.window_start),
+        to: Date.parse(query.window_end),
+        now,
+        price: (h) => {
+          if (h < tomorrow) return P.priceOf(h);
+          if (now < fromLocal(2026, 11, 11, 15)) return provisional(h);
+          if (now < fromLocal(2026, 11, 11, 17, 30)) return undefined;
+          return P.priceOf(h);
+        },
+      }),
+  });
+  const env = await started({ pstryk, now: fromLocal(2026, 11, 11, 14) });
+  t.after(() => env.app.stop());
+  assert.equal(env.app.priceAt(fromLocal(2026, 11, 12, 8)), 0.95);
+  await env.wait(3 * HOUR + MINUTE);
+  assert.equal(env.app.priceAt(fromLocal(2026, 11, 12, 8)), undefined);
+  assert.equal(env.store.data.confirmed, null);
+  assert.ok(env.store.data.confirm);
+  await env.wait(HOUR);
+  for (let h = tomorrow; h < addDays(tomorrow, 1); h += HOUR) {
+    assert.equal(env.app.priceAt(h), P.priceOf(h));
+  }
+  assert.equal(env.store.data.confirmed, '2026-11-12');
+});
+
+test('a 6-hour 5xx pause running past midnight is cut to an hour once no price of the hour is held', async (t) => {
+  // Today held, tomorrow never given: at midnight no price of the current hour.
+  const pstryk = createPstryk(until(() => fromLocal(2026, 11, 12)));
+  const env = await started({ pstryk, now: fromLocal(2026, 11, 11, 21) });
+  t.after(() => env.app.stop());
+  // A 6-hour pause from 22:00 (today held: not capped), to 04:00.
+  pstryk.answers.pricing = () => json({}, 503);
+  env.app.pause = undefined;
+  env.app.data.pause = null;
+  await env.app.setPause({ code: 'server', status: 503, retryAfter: 6 * HOUR });
+  assert.equal(env.app.pause.until - env.clock.now, 6 * HOUR);
+  env.app.schedule(env.app.gen);
+  Object.assign(pstryk.answers, createPstryk().answers);
+  const n = pstryk.count('pricing');
+  await env.wait(fromLocal(2026, 11, 12, 1, 30) - env.clock.now);
+  // Cut at 00:00 to an hour: read again by 01:00, not 04:00.
+  assert.ok(pstryk.count('pricing') > n);
+  assert.equal(env.app.priceAt(env.clock.now), P.priceOf(fromLocal(2026, 11, 12, 1)));
+});

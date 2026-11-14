@@ -656,20 +656,36 @@ export class PstrykApp {
   }
 
   /**
-   * After a read of the recent prices: a confirmation due by then is done;
-   * tomorrow kept for the first time asks for one (3 hours later, aiming
-   * before 23:00, at least an hour later).
+   * After a read of the recent prices: a confirmation due by then is done
+   * when the read gives the day whole again; when it does not (missing or
+   * flat), the hours of that day not started yet are dropped and the day stays
+   * to confirm (read hourly until whole). Tomorrow kept for the first time
+   * asks for one (3 hours later, aiming before 23:00, at least an hour later).
    */
-  afterRecentRead(startMono, now, heldBefore) {
+  afterRecentRead(startMono, now, heldBefore, parsed) {
     const tomorrow = addDays(now, 1);
     const day = localDate(tomorrow);
     const c = this.pendingConfirm(now);
     if (c) {
       const due = this.confirmMono ?? startMono + Math.max(0, c.due - now);
-      if (startMono >= due) {
+      if (startMono < due) return;
+      if (parsed.days.has(c.day)) {
         this.data.confirmed = c.day;
         this.data.confirm = null;
         this.confirmMono = undefined;
+        return;
+      }
+      let dropped = 0;
+      for (const index of Object.keys(this.data.prices)) {
+        const h = Number(index) * HOUR;
+        if (h > now && localDate(h) === c.day) {
+          delete this.data.prices[index];
+          delete this.data.sell[index];
+          dropped += 1;
+        }
+      }
+      if (dropped) {
+        this.log.warn(`Pstryk no longer gives ${c.day} whole: ${dropped} hour(s) to come dropped`);
       }
       return;
     }
@@ -911,7 +927,7 @@ export class PstrykApp {
     const tomorrow = addDays(now, 1);
     const heldBefore = this.covered(tomorrow, addDays(tomorrow, 1));
     this.record(parsed);
-    this.afterRecentRead(startMono, now, heldBefore);
+    this.afterRecentRead(startMono, now, heldBefore, parsed);
     this.prune();
     await this.save();
     if (this.gone(gen)) return;
