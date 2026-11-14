@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-14
+
 ### Added
 
 - First version: the Pstryk account of an API key read through the official
@@ -30,3 +32,6 @@ the notes of the version's GitHub Release.
   aiming before 23:00): the hours not started yet take the values read again.
 - A 5xx pause lasts at most an hour while no price of the current hour is
   held; `/data` unreadable at a start: the first read after 5 minutes.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-pstryk/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-pstryk/releases/tag/v0.1.1

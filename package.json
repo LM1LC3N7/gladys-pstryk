@@ -1,6 +1,6 @@
 {
   "name": "gladys-pstryk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Pstryk (Poland) for Gladys Assistant: the hourly dynamic prices of your Pstryk contract for a delegated energy contract, and the hourly consumption of your meter, read from the official Pstryk API with your own API key. Read-only. Unofficial, not affiliated with Pstryk.",
   "type": "module",
