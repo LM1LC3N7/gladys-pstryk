@@ -59,6 +59,7 @@ export function createPstryk(answers = {}) {
       path: u.pathname,
       query: Object.fromEntries(u.searchParams),
       method: init.method,
+      redirect: init.redirect,
       body: init.body,
       auth: init.headers.Authorization,
       headers: init.headers,

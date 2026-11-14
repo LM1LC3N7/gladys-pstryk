@@ -62,7 +62,7 @@
   {
     "name": "prices asked again once all held",
     "file": "src/app.js",
-    "from": "    return Math.max(due, mono + (at - now));",
+    "from": "    return Math.max(due, next);",
     "to": "    return due;"
   },
   {
@@ -86,8 +86,8 @@
   {
     "name": "an unknown price guessed 0",
     "file": "src/app.js",
-    "from": "      if (price === undefined || !finite(kwh) || kwh < 0) {",
-    "to": "      if (!finite(kwh) || kwh < 0) {"
+    "from": "      if (price === undefined) {",
+    "to": "      if (false) {"
   },
   {
     "name": "/data overwritten while unreadable",
@@ -104,8 +104,8 @@
   {
     "name": "Retry-After not capped",
     "file": "src/app.js",
-    "from": "const ms = Math.min(PAUSE_MAX, Math.max(PAUSE_MIN, asked, base * 2 ** (count - 1)));",
-    "to": "const ms = Math.max(PAUSE_MIN, asked, base * 2 ** (count - 1));"
+    "from": "      this.serverCap(err.code, now),",
+    "to": "      Infinity,"
   },
   {
     "name": "past holes never read again",
@@ -214,5 +214,143 @@
     "file": "src/app.js",
     "from": "      if (this.gone(gen)) return;\n      parsed = parsePricing(body);\n      if (!parsed) throw new PstrykError('bad_response');\n    } catch (err) {\n      this.failures = Math.min(this.failures + 1, 16);\n      throw err;\n    }\n    await this.clearPause();\n    if (this.gone(gen)) return;\n    this.failures = 0;",
     "to": "      parsed = parsePricing(body);\n      if (!parsed) throw new PstrykError('bad_response');\n    } catch (err) {\n      this.failures = Math.min(this.failures + 1, 16);\n      throw err;\n    }\n    await this.clearPause();\n    this.failures = 0;"
+  },
+  {
+    "name": "r1: flat share 0.99 (22/24 kept)",
+    "file": "src/constants.js",
+    "from": "export const FLAT_DAY_SHARE = 0.9;",
+    "to": "export const FLAT_DAY_SHARE = 0.99;"
+  },
+  {
+    "name": "r1: flat share 0.5 (13/24 refused)",
+    "file": "src/constants.js",
+    "from": "export const FLAT_DAY_SHARE = 0.9;",
+    "to": "export const FLAT_DAY_SHARE = 0.5;"
+  },
+  {
+    "name": "r1: late /data merge after a key change brings old prices back",
+    "file": "src/app.js",
+    "from": "    if (this.keyChanged) return;\n",
+    "to": "\n"
+  },
+  {
+    "name": "r1: consumption read without a created device",
+    "file": "src/app.js",
+    "from": "if (!this.data.seen || !this.created.has(this.ids.feature(FEATURE.CONSUMPTION))) {",
+    "to": "if (!this.data.seen) {"
+  },
+  {
+    "name": "r1: redirects followed (key sent elsewhere)",
+    "file": "src/pstryk/client.js",
+    "from": "redirect: 'error',",
+    "to": "redirect: 'follow',"
+  },
+  {
+    "name": "r1: /data price beyond the bound taken",
+    "file": "src/app.js",
+    "from": "      finite(price) &&\n      Math.abs(price) <= MAX_PRICE",
+    "to": "      finite(price)"
+  },
+  {
+    "name": "r1: hour published whole in each half",
+    "file": "src/pstryk/model.js",
+    "from": "const half = Math.round((hours.get(at) / 2) * 1e6) / 1e6;",
+    "to": "const half = Math.round(hours.get(at) * 1e6) / 1e6;"
+  },
+  {
+    "name": "r1: pause not doubled",
+    "file": "src/app.js",
+    "from": "base * 2 ** (count - 1)",
+    "to": "base"
+  },
+  {
+    "name": "r1: a frame that is not one hour read",
+    "file": "src/pstryk/model.js",
+    "from": "end !== at + HOUR || ",
+    "to": ""
+  },
+  {
+    "name": "r1: attempt not kept in /data before the read",
+    "file": "src/app.js",
+    "from": "    this.data.lastPrices = now;\n",
+    "to": "\n"
+  },
+  {
+    "name": "r1: negative kWh priced",
+    "file": "src/app.js",
+    "from": "      if (!finite(kwh) || kwh < 0) {",
+    "to": "      if (!finite(kwh)) {"
+  },
+  {
+    "name": "r1: a 429 during the past read swallowed",
+    "file": "src/app.js",
+    "from": "          if (STOPPING.has(err?.code)) throw err;\n          this.log.warn(`Past prices",
+    "to": "          this.log.warn(`Past prices"
+  },
+  {
+    "name": "r1: Test sent during a pause",
+    "file": "src/app.js",
+    "from": "    if (this.pauseActive(mono)) return this.pausedText();\n",
+    "to": "\n"
+  },
+  {
+    "name": "r1: tomorrow needed before 14:00",
+    "file": "src/app.js",
+    "from": "return addDays(now, local(now).h >= PRICES_HOUR ? 2 : 1);",
+    "to": "return addDays(now, 2);"
+  },
+  {
+    "name": "r1: next price unknown read as no change",
+    "file": "src/app.js",
+    "from": "if (p === undefined) return { at, price: undefined };",
+    "to": "if (p === undefined) return undefined;"
+  },
+  {
+    "name": "r1: refusal tag not checked against the key (any key refused)",
+    "file": "src/app.js",
+    "from": "this.refused && this.refused.tag === tagOf(this.refused.salt, this.config.apiKey),",
+    "to": "this.refused,"
+  },
+  {
+    "name": "no confirmation read",
+    "file": "src/app.js",
+    "from": "    this.afterRecentRead(startMono, now, heldBefore);\n",
+    "to": "\n"
+  },
+  {
+    "name": "a confirmation never done",
+    "file": "src/app.js",
+    "from": "      if (startMono >= due) {",
+    "to": "      if (false) {"
+  },
+  {
+    "name": "the confirmation not before 23:00",
+    "file": "src/app.js",
+    "from": "const delay = Math.max(CONFIRM_MIN, Math.min(CONFIRM_DELAY, aim));",
+    "to": "const delay = CONFIRM_DELAY;"
+  },
+  {
+    "name": "5xx pause not capped while today is unknown",
+    "file": "src/app.js",
+    "from": "return code === 'server' && this.priceAt(now) === undefined ? HOUR : PAUSE_MAX;",
+    "to": "return PAUSE_MAX;"
+  },
+  {
+    "name": "/data unreadable: the wait moves on",
+    "file": "src/app.js",
+    "from": "    this.bootMono ??= mono;\n",
+    "to": "    this.bootMono = mono;\n"
+  },
+  {
+    "name": "0 kWh without a price fails",
+    "file": "src/app.js",
+    "from": "      if (kwh === 0) return { starts_at: startsAt, cost: 0, label: 'Pstryk' };\n",
+    "to": "\n"
+  },
+  {
+    "name": "Test says asked to wait on a 5xx",
+    "file": "src/app.js",
+    "from": "return both(this.pause.code === 'rate_limited' ? 'testPaused' : 'testServer', {",
+    "to": "return both('testPaused', {"
   }
 ]

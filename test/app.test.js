@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { tagOf } from '../src/app.js';
 import { registerHandlers } from '../src/handlers.js';
 import { createMemoryStore } from '../src/store.js';
-import { addDays, fromLocal } from '../src/time.js';
+import { addDays, fromLocal, local } from '../src/time.js';
 import { DAY, HOUR, MINUTE, createPstryk, json, setup, written } from './helpers/app.js';
 import * as P from './fixtures/pstryk.js';
 
@@ -90,7 +90,7 @@ test('start: the recent prices, then the past ones by windows; Discovery, status
   assert.deepEqual(window(past1), [fromLocal(2026, 10, 11), fromLocal(2026, 10, 27)]);
   assert.deepEqual(window(past2), [fromLocal(2026, 10, 27), fromLocal(2026, 11, 10)]);
   const [device] = env.fake.discoveredDevices;
-  assert.equal(device.name, 'Pstryk electricity');
+  assert.equal(device.name, 'Pstryk');
   assert.equal(device.external_id, DEVICE);
   assert.deepEqual(
     device.features.map((f) => f.external_id.split(':').at(-1)),
@@ -139,15 +139,20 @@ test('prices: published as features every hour; tomorrow looked for from 14:00, 
   assert.equal(calls(env, 'pricing').length, 4);
   await env.wait(HOUR);
   assert.equal(calls(env, 'pricing').length, 5);
-  // At 23:00 the next hour (tomorrow) is unknown: left out, never 0.
+  // Tomorrow out at 16:00: kept, then read once more 3 hours later to confirm it.
   tomorrowOut = true;
   await env.wait(HOUR);
   assert.equal(calls(env, 'pricing').length, 6);
-  // All held: nothing until tomorrow 14:00.
-  await env.wait(20 * HOUR);
+  await env.wait(3 * HOUR - 2 * MINUTE);
   assert.equal(calls(env, 'pricing').length, 6);
-  await env.wait(3 * HOUR);
+  await env.wait(3 * MINUTE);
   assert.equal(calls(env, 'pricing').length, 7);
+  assert.equal(env.store.data.confirmed, '2026-11-12');
+  // All held and confirmed: nothing until tomorrow 14:00.
+  await env.wait(19 * HOUR - 4 * MINUTE);
+  assert.equal(calls(env, 'pricing').length, 7);
+  await env.wait(3 * MINUTE);
+  assert.equal(calls(env, 'pricing').length, 8);
 });
 
 test('the next hour unknown: its feature is left out, never 0; no price now: said in the status', async (t) => {
@@ -565,13 +570,13 @@ test('a past hole Pstryk cannot fill is asked again every 6 hours, never more of
   assert.match(statusText(env), /no complete prices for some past days/);
   // The whole day of the hole is missing, never part of it.
   assert.equal(env.app.priceAt(hole + HOUR), undefined);
-  // Tomorrow is held: no recent read at 14:00; the past not before 6 hours.
+  // 14:00: the confirmation of tomorrow only; the past not before 6 hours.
   await env.wait(6 * HOUR - MINUTE);
-  assert.equal(pstryk.count('pricing'), 3);
+  assert.equal(pstryk.count('pricing'), 4);
   fill = true;
   await env.wait(2 * MINUTE);
   // From the day of the hole: 2 windows.
-  assert.equal(pstryk.count('pricing'), 5);
+  assert.equal(pstryk.count('pricing'), 6);
   assert.equal(env.app.priceAt(hole), P.priceOf(hole));
   assert.doesNotMatch(statusText(env), /past days/);
 });
@@ -743,4 +748,209 @@ test('Discovery from a scan never sends a request; the device is offered again a
   await later.fake.scanRequest();
   assert.equal(pstryk.calls.length, 0);
   assert.equal(deviceOf(later).external_id, DEVICE);
+});
+
+test('tomorrow kept once is read again 3 hours later: a provisional answer replaced in the hours to come', async (t) => {
+  const tomorrow = fromLocal(2026, 11, 12);
+  // Until 15:00, tomorrow comes as a provisional two-value answer (not flat).
+  const provisional = (h) => (local(h).h >= 8 && local(h).h < 22 ? 0.95 : 0.55);
+  const pstryk = createPstryk({
+    pricing: ({ query }, now) =>
+      P.pricing({
+        from: Date.parse(query.window_start),
+        to: Date.parse(query.window_end),
+        now,
+        price: (h) =>
+          h >= tomorrow && now < fromLocal(2026, 11, 11, 15) ? provisional(h) : P.priceOf(h),
+      }),
+  });
+  const env = await started({ pstryk, now: fromLocal(2026, 11, 11, 14) });
+  t.after(() => env.app.stop());
+  const eight = fromLocal(2026, 11, 12, 8);
+  assert.equal(env.app.priceAt(eight), 0.95);
+  const n = pstryk.count('pricing');
+  await env.wait(3 * HOUR - MINUTE);
+  assert.equal(pstryk.count('pricing'), n);
+  await env.wait(2 * MINUTE);
+  assert.equal(pstryk.count('pricing'), n + 1);
+  for (let h = tomorrow; h < addDays(tomorrow, 1); h += HOUR) {
+    assert.equal(env.app.priceAt(h), P.priceOf(h));
+  }
+  assert.ok(env.lines.some((l) => /changed the price of \d+ hour/.test(l)));
+  // Confirmed once: nothing more before the next 14:00.
+  await env.wait(20 * HOUR);
+  assert.equal(pstryk.count('pricing'), n + 1);
+});
+
+test('the confirmation aims before 23:00; an hour already started is never repriced by it', async (t) => {
+  let second = false;
+  const pstryk = createPstryk({
+    pricing: ({ query }, now) =>
+      P.pricing({
+        from: Date.parse(query.window_start),
+        to: Date.parse(query.window_end),
+        now,
+        price: (h) => (second ? P.priceOf(h) + 1 : P.priceOf(h)),
+      }),
+  });
+  const env = await started({ pstryk, now: fromLocal(2026, 11, 11, 21) });
+  t.after(() => env.app.stop());
+  assert.equal(env.store.data.confirm.due, fromLocal(2026, 11, 11, 23));
+  second = true;
+  await env.wait(2 * HOUR + MINUTE);
+  // Read just before 23:00: the hour 22:00 (started) kept, the hours to come replaced.
+  const read = pstryk.calls.at(-1).at;
+  assert.ok(read < fromLocal(2026, 11, 11, 23) && read > fromLocal(2026, 11, 11, 22, 59));
+  const h = fromLocal(2026, 11, 11, 22);
+  assert.equal(env.app.priceAt(h), P.priceOf(h));
+  assert.equal(env.app.priceAt(h + HOUR), P.priceOf(h + HOUR) + 1);
+});
+
+for (const [name, answer, gaps] of [
+  ['5xx', () => json({}, 503), [5, 10, 20, 40, 80, 160, 320, 360]],
+  ['429 without Retry-After', () => json({}, 429), [15, 30, 60, 120, 240, 360, 360]],
+]) {
+  test(`${name} for a day (today's prices held): the pause doubles up to 6 hours`, async (t) => {
+    const pstryk = createPstryk();
+    const env = await started({ pstryk });
+    t.after(() => env.app.stop());
+    pstryk.answers.pricing = answer;
+    const first = pstryk.calls.length;
+    await env.wait(DAY);
+    const at = pstryk.calls.slice(first).map((c) => c.at);
+    const seen = at.slice(1).map((x, i) => Math.round((x - at[i]) / MINUTE));
+    assert.deepEqual(seen.slice(0, gaps.length), gaps);
+  });
+}
+
+test('a 429 while reading the past days: no other window sent, the pause set', async (t) => {
+  const yesterday = fromLocal(2026, 11, 10);
+  const pstryk = createPstryk({
+    pricing: (call, now) =>
+      Date.parse(call.query.window_end) <= yesterday
+        ? json({}, 429, { 'retry-after': '600' })
+        : createPstryk().answers.pricing(call, now),
+  });
+  const env = await started({ pstryk });
+  t.after(() => env.app.stop());
+  assert.equal(pstryk.count('pricing'), 2);
+  assert.equal(env.store.data.pause.code, 'rate_limited');
+  assert.match(statusText(env), /slow down/);
+  const test1 = await env.fake.action('test_connection');
+  assert.match(JSON.stringify(test1), /asked to wait until 11:15/);
+});
+
+test('a refusal kept in /data, a restart with another key: that key is tried', async (t) => {
+  const store = createMemoryStore();
+  const pstryk = createPstryk({ pricing: () => json(P.REFUSED_BODY, 403) });
+  const env = await started({ store, pstryk });
+  await env.app.stop();
+  assert.ok(store.data.refused);
+  Object.assign(pstryk.answers, createPstryk().answers);
+  const later = await started({
+    store,
+    pstryk,
+    now: P.NOW + MINUTE,
+    config: { api_key: 'sk-restart-other-key-0001' },
+  });
+  t.after(() => later.app.stop());
+  await later.wait(10 * MINUTE);
+  assert.ok(pstryk.count('pricing') >= 2);
+  assert.equal(pstryk.calls.at(-1).auth, 'sk-restart-other-key-0001');
+  assert.match(statusText(later), /^Connected/);
+});
+
+test('a 5xx pause: the Test button says Pstryk is unavailable, not that it asked to wait', async (t) => {
+  const env = await started({ pstryk: createPstryk({ pricing: () => json({}, 500) }) });
+  t.after(() => env.app.stop());
+  const answer = await env.fake.action('test_connection');
+  assert.match(JSON.stringify(answer), /Pstryk is unavailable, no request until 11:05/);
+});
+
+test('nothing consumed costs 0 even without a price; a negative consumption is refused', async (t) => {
+  const env = await started();
+  t.after(() => env.app.stop());
+  const old = fromLocal(2026, 9, 1);
+  const zero = await priceRequest(env, [old], 0);
+  assert.equal(zero.success, true, JSON.stringify(zero));
+  assert.equal(zero.data.costs[0].cost, 0);
+  const t0 = fromLocal(2026, 11, 11, 9);
+  assert.equal((await priceRequest(env, [t0], -1)).success, false);
+  assert.equal((await priceRequest(env, [old], 1)).success, false);
+});
+
+test('the current price: the next hour unknown gives its start and no next price', async (t) => {
+  const pstryk = createPstryk(until(() => fromLocal(2026, 11, 12)));
+  const env = await started({ pstryk, now: fromLocal(2026, 11, 11, 23, 10) });
+  t.after(() => env.app.stop());
+  const current = await env.fake.energyCurrent({ contract: contract(), cumulative: {} });
+  assert.equal(current.data.price, P.priceOf(fromLocal(2026, 11, 11, 23)));
+  assert.equal(Date.parse(current.data.valid_until), fromLocal(2026, 11, 12));
+  assert.equal(current.data.next_price, null);
+});
+
+test('no consumption read without the device created', async (t) => {
+  const env = await started();
+  t.after(() => env.app.stop());
+  await env.wait(DAY);
+  assert.equal(env.pstryk.count('meter_values'), 0);
+});
+
+test('/data unreadable from the start: the first read after 5 minutes, not an hour', async (t) => {
+  const store = createMemoryStore();
+  store.unreadable = true;
+  const env = await started({ store });
+  t.after(() => env.app.stop());
+  assert.equal(env.pstryk.count('pricing'), 0);
+  await env.wait(4 * MINUTE);
+  assert.equal(env.pstryk.count('pricing'), 0);
+  await env.wait(2 * MINUTE);
+  assert.ok(env.pstryk.count('pricing') >= 1);
+  assert.equal(env.pstryk.calls[0].at - P.NOW, 5 * MINUTE);
+  assert.equal(store.saves, 0);
+});
+
+test('/data read late after another key: the old prices are not taken back', async (t) => {
+  const old = {};
+  const h = fromLocal(2026, 11, 11, 9);
+  old[h / HOUR] = 9.99;
+  const store = createMemoryStore({ prices: old, refused: null, version: 1 });
+  store.unreadable = true;
+  const env = await started({ store });
+  t.after(() => env.app.stop());
+  await env.fake.configUpdated({ api_key: 'sk-other-account-key-111' });
+  store.unreadable = false;
+  await env.wait(11 * 1000);
+  assert.ok(store.saves >= 1);
+  assert.notEqual(env.app.priceAt(h), 9.99);
+});
+
+test('prices of /data beyond the bound or out of the window are not taken', async () => {
+  const { validHours } = await import('../src/app.js');
+  const h = Math.floor(P.NOW / HOUR);
+  const kept = validHours(
+    { [h]: 0.5, [h + 1]: 51, [h + 2]: -51, [h - 41 * 24]: 0.5, x: 1 },
+    P.NOW,
+    40 * DAY,
+  );
+  assert.deepEqual(kept, { [h]: 0.5 });
+});
+
+test('an outage lasting past midnight: today read again within the hour, not after a 6-hour pause', async (t) => {
+  let down = false;
+  const ok = createPstryk(until(() => (down ? fromLocal(2026, 11, 12) : fromLocal(2026, 11, 12))));
+  const pstryk = createPstryk({
+    pricing: (call, now) => (down ? json({}, 503) : ok.answers.pricing(call, now)),
+  });
+  const env = await started({ pstryk });
+  t.after(() => env.app.stop());
+  down = true;
+  // 14:00 to 03:00: Pstryk down, tomorrow never read.
+  await env.wait(fromLocal(2026, 11, 12, 3) - env.clock.now);
+  assert.equal(env.app.priceAt(env.clock.now), undefined);
+  assert.ok(env.store.data.pause.until - env.clock.now <= HOUR);
+  down = false;
+  ok.answers.pricing = createPstryk().answers.pricing;
+  await env.wait(HOUR + MINUTE);
+  assert.equal(env.app.priceAt(env.clock.now), P.priceOf(env.clock.now - (env.clock.now % HOUR)));
 });

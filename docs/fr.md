@@ -11,7 +11,7 @@ n'est jamais modifié sur votre compte.
 
 ## Ce que vous obtenez
 
-- **Un appareil**, « Pstryk électricité », proposé dans la Découverte dès que
+- **Un appareil**, « Pstryk », proposé dans la Découverte dès que
   Pstryk a répondu à votre clé :
   - **Prix du kWh actuel (PLN)** et **Prochain prix du kWh (PLN)** : le prix
     brut (TVA incluse) que Pstryk donne pour l'heure en cours et la suivante,
@@ -54,35 +54,54 @@ requête.
 
 - Les prix récents (d'hier à la fin de demain) : quand ceux qui sont connus ne
   couvrent pas le reste de la journée (ou, à partir de 14 h heure polonaise,
-  toute la journée de demain), au plus une fois par heure. Une fois demain
-  connu, plus rien avant 14 h le lendemain.
+  toute la journée de demain), au plus une fois par heure. Les prix de demain,
+  une fois gardés, sont relus une fois pour les confirmer (3 heures plus tard,
+  en visant avant 23 h, au moins une heure plus tard) : les heures pas encore
+  commencées prennent les valeurs relues. Puis plus rien avant 14 h le
+  lendemain.
 - Les prix passés manquants (après un arrêt, une panne) : jusqu'à 31 jours en
   arrière, au plus toutes les 6 heures.
 - La consommation, une fois l'appareil ajouté : toutes les 3 heures (les 3
   derniers jours), une fois par jour après 6 h et pour un nouvel appareil les
   7 derniers jours.
 - Après une lecture des prix en échec : nouvel essai après 5, 10, 20, 40, puis
-  toutes les 60 minutes. Pstryk qui demande de ralentir (HTTP 429, son
-  `Retry-After` respecté) ou indisponible (5xx) : aucune requête jusqu'à
-  l'heure demandée (au moins 1 minute, au plus 6 heures), gardée d'un
-  redémarrage à l'autre.
+  toutes les 60 minutes.
+- Pstryk qui demande de ralentir (HTTP 429) : aucune requête pendant la durée
+  demandée par son `Retry-After`, sinon 15 minutes, doublées à chaque nouveau
+  429 (30, 60, 120…), au plus 6 heures. Pstryk indisponible (5xx) : aucune
+  requête pendant 5 minutes, doublées à chaque nouveau 5xx, au plus 6 heures,
+  ou au plus 1 heure tant qu'aucun prix de l'heure en cours n'est connu (une
+  panne qui dure après minuit). Les pauses sont gardées d'un redémarrage à
+  l'autre : après une longue panne, la lecture suivante peut attendre jusqu'à
+  6 heures.
 - Un redémarrage, la Découverte ou l'enregistrement de la configuration ne
   lisent jamais plus tôt que ces intervalles (une nouvelle clé est lue après 1
-  minute). Une requête à la fois, espacées d'au moins 2 secondes.
+  minute). Quand `/data` est illisible au démarrage, les dernières lectures
+  sont inconnues : la première lecture attend 5 minutes. Une requête à la
+  fois, espacées d'au moins 2 secondes.
 
 ## Ce que sont les prix
 
 Pour chaque heure, l'API de Pstryk donne le prix brut du kWh de votre contrat
-(`price_gross`, TVA incluse). L'intégration le garde tel quel ; qu'il comprenne
-la part variable de la distribution et l'accise dépend de Pstryk (le prix
-affiché dans l'application Pstryk). Les prix des heures passées sont gardés 40
-jours dans `/data`, pour que Gladys puisse tarifer les intervalles passés.
+(`price_gross`, TVA incluse). L'intégration le garde tel quel. Ce qu'il
+comprend (l'énergie seule, ou aussi la part variable de la distribution et
+l'accise) n'est pas encore confirmé sur un vrai compte : s'il laisse de côté
+la part variable de la distribution, le coût affiché par Gladys est sous votre
+facture. Les prix des heures passées sont gardés 40 jours dans `/data`, pour
+que Gladys puisse tarifer les intervalles passés ; un intervalle plus ancien
+que les prix gardés (un contrat créé avec une date de début lointaine) n'a pas
+de coût. Le modèle ne sert qu'au prix dynamique de Pstryk : un contrat à prix
+fixe (le même prix chaque heure) n'est jamais tarifé.
 
-Jamais de prix deviné, jamais un prix inconnu compté 0. Une journée polonaise
-n'est gardée qu'entière : chacune de ses heures a un prix (23 ou 25 les jours
-de changement d'heure), et ce n'est pas une même valeur répétée sur presque
-toute la journée
-(ce que Pstryk peut répondre avant la publication des prix de demain). Quand
+Un prix inconnu n'est jamais compté 0 (une demi-heure sans consommation coûte
+0 quel que soit le prix). Les prix provisoires sont écartés par une règle qui
+n'est pas confirmée sur un vrai compte : une journée polonaise n'est gardée
+qu'entière (chacune de ses heures a un prix, 23 ou 25 les jours de changement
+d'heure) et sans une même valeur répétée sur plus de 90 % de ses heures (ce
+que Pstryk peut répondre avant la publication des prix de demain) ; une
+réponse provisoire qui passe cette règle est remplacée par la lecture de
+confirmation dans les heures pas encore commencées, une heure déjà commencée
+garde le prix gardé pour elle. Quand
 une heure d'une période de facturation n'a pas de prix, toute la demande de
 Gladys pour cette période échoue et aucun coût n'est enregistré tant que le
 prix n'est pas connu : l'intégration relit les jours passés manquants

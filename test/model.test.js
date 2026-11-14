@@ -66,6 +66,24 @@ test('prices: a flat day (one value repeated, prices not published yet) is never
   );
   assert.deepEqual([...parsed.days], ['2026-11-11']);
   assert.equal(parsed.buy.has(tomorrow), false);
+  // 22 equal hours of 24 (92 %): a placeholder, left out.
+  const most = parsePricing(
+    P.pricing({
+      from: DAY0,
+      to: addDays(DAY0, 1),
+      price: (h) => (h < DAY0 + 2 * HOUR ? P.priceOf(h) + 1 : 0.9),
+    }),
+  );
+  assert.equal(most.buy.size, 0);
+  // 13 equal hours of 24: kept.
+  const half = parsePricing(
+    P.pricing({
+      from: DAY0,
+      to: addDays(DAY0, 1),
+      price: (h) => (h < DAY0 + 11 * HOUR ? P.priceOf(h) + 1 : 0.9),
+    }),
+  );
+  assert.equal(half.buy.size, 24);
   // 21 equal hours of 24 (87 %): a real day, kept.
   const mostly = parsePricing(
     P.pricing({

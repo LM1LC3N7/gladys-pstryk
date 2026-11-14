@@ -35,6 +35,9 @@ import {
   BACKFILL_HOUR,
   CONFIG_RETRY_MAX,
   CONFIG_RETRY_MIN,
+  CONFIRM_BEFORE_HOUR,
+  CONFIRM_DELAY,
+  CONFIRM_MIN,
   CONSUMPTION_DAYS,
   CONSUMPTION_INTERVAL,
   CREATED_MIN_GAP,
@@ -59,6 +62,7 @@ import {
   STORE_WAIT,
   TEST_MIN_GAP,
   TICK,
+  UNREADABLE_WAIT,
 } from './constants.js';
 import { FEATURE, buildDevice, idsOf, priceStates } from './devices.js';
 import { both, t } from './i18n.js';
@@ -193,7 +197,13 @@ export class PstrykApp {
       backfilled: false,
       prices: {},
       sell: {},
+      /** Tomorrow's prices kept once, to read again: { day, due } (wall clock, /data). */
+      confirm: null,
+      /** The last day whose prices were confirmed by a second read. */
+      confirmed: null,
     };
+    /** The monotonic time of the pending confirmation (this process). */
+    this.confirmMono = undefined;
     this.storeState = 'pending';
     this.loading = null;
     this.storeTimer = null;
@@ -222,6 +232,8 @@ export class PstrykApp {
     this.dueMono = undefined;
     this.lastDiscovery = undefined;
     this.freshConfig = false;
+    /** The monotonic time of the first start (the reference while /data cannot be read). */
+    this.bootMono = undefined;
   }
 
   gone(gen) {
@@ -326,6 +338,9 @@ export class PstrykApp {
     this.data.backfilled = false;
     this.data.lastFull = null;
     this.data.lastPricesOk = null;
+    this.data.confirm = null;
+    this.data.confirmed = null;
+    this.confirmMono = undefined;
     this.failures = 0;
     this.lastError = undefined;
     this.consumptionError = undefined;
@@ -492,6 +507,23 @@ export class PstrykApp {
       ...this.data.prices,
     };
     this.data.sell = { ...validHours(data.sell, now, DAY), ...this.data.sell };
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    if (
+      !this.data.confirm &&
+      data.confirm &&
+      typeof data.confirm.day === 'string' &&
+      day.test(data.confirm.day) &&
+      finite(data.confirm.due)
+    ) {
+      // A due date further than the delay is invalid: capped.
+      this.data.confirm = {
+        day: data.confirm.day,
+        due: Math.min(data.confirm.due, now + CONFIRM_DELAY),
+      };
+    }
+    if (!this.data.confirmed && typeof data.confirmed === 'string' && day.test(data.confirmed)) {
+      this.data.confirmed = data.confirmed;
+    }
   }
 
   async save() {
@@ -510,6 +542,8 @@ export class PstrykApp {
       backfilled: this.data.backfilled,
       prices: this.data.prices,
       sell: this.data.sell,
+      confirm: this.data.confirm,
+      confirmed: this.data.confirmed,
     };
     try {
       // A slow volume never holds a read: the write goes on in the background.
@@ -549,8 +583,11 @@ export class PstrykApp {
   /** The monotonic time a kind of read is due, from this process or from /data. */
   dueOf(lastMono, lastWall, interval, mono, now) {
     if (lastMono !== undefined) return lastMono + interval;
-    // /data not read: its last read is unknown, a whole interval is waited.
-    if (this.storeState !== 'ok') return mono + interval;
+    // /data not read: its last read is unknown; a short wait (never a burst
+    // of restarts), the interval when shorter.
+    // Counted from the first start of this process: a fixed time, never moving on.
+    this.bootMono ??= mono;
+    if (this.storeState !== 'ok') return this.bootMono + Math.min(interval, UNREADABLE_WAIT);
     return finite(lastWall) && lastWall <= now
       ? mono + Math.max(0, interval - (now - lastWall))
       : mono;
@@ -595,7 +632,54 @@ export class PstrykApp {
       const n = local(addDays(now, 1));
       at = fromLocal(n.y, n.mo, n.d, PRICES_HOUR);
     }
-    return Math.max(due, mono + (at - now));
+    let next = mono + (at - now);
+    // Tomorrow kept once: read again to confirm it (once).
+    const confirm = this.pendingConfirm(now);
+    if (confirm) {
+      const confirmDue =
+        this.confirmMono ?? mono + Math.min(CONFIRM_DELAY, Math.max(0, confirm.due - now));
+      next = Math.min(next, confirmDue);
+    }
+    return Math.max(due, next);
+  }
+
+  /** The confirmation still to do (its day not over), else undefined. */
+  pendingConfirm(now) {
+    const c = this.data.confirm;
+    if (!c) return undefined;
+    if (c.day < localDate(now)) {
+      this.data.confirm = null;
+      this.confirmMono = undefined;
+      return undefined;
+    }
+    return c;
+  }
+
+  /**
+   * After a read of the recent prices: a confirmation due by then is done;
+   * tomorrow kept for the first time asks for one (3 hours later, aiming
+   * before 23:00, at least an hour later).
+   */
+  afterRecentRead(startMono, now, heldBefore) {
+    const tomorrow = addDays(now, 1);
+    const day = localDate(tomorrow);
+    const c = this.pendingConfirm(now);
+    if (c) {
+      const due = this.confirmMono ?? startMono + Math.max(0, c.due - now);
+      if (startMono >= due) {
+        this.data.confirmed = c.day;
+        this.data.confirm = null;
+        this.confirmMono = undefined;
+      }
+      return;
+    }
+    if (heldBefore || this.data.confirmed === day) return;
+    if (!this.covered(tomorrow, addDays(tomorrow, 1))) return;
+    const t = local(now);
+    const aim = fromLocal(t.y, t.mo, t.d, CONFIRM_BEFORE_HOUR) - now;
+    const delay = Math.max(CONFIRM_MIN, Math.min(CONFIRM_DELAY, aim));
+    this.data.confirm = { day, due: now + delay };
+    this.confirmMono = startMono + delay;
   }
 
   /**
@@ -667,6 +751,8 @@ export class PstrykApp {
       this.tickTimer = null;
       if (this.gone(gen)) return;
       this.publishPrices(gen)
+        .catch(() => {})
+        .then(() => this.capPause(gen))
         .catch(() => {})
         .then(() => this.report(gen))
         .catch(() => {})
@@ -746,12 +832,37 @@ export class PstrykApp {
     const count = Math.min((this.pause?.code === err.code ? this.pause.count : 0) + 1, 16);
     const base = err.code === 'rate_limited' ? RATE_LIMIT_PAUSE : SERVER_PAUSE;
     const asked = finite(err.retryAfter) && err.retryAfter > 0 ? err.retryAfter : 0;
-    const ms = Math.min(PAUSE_MAX, Math.max(PAUSE_MIN, asked, base * 2 ** (count - 1)));
+    const ms = Math.min(
+      this.serverCap(err.code, now),
+      Math.max(PAUSE_MIN, asked, base * 2 ** (count - 1)),
+    );
     const detail = err.status ? `HTTP ${err.status}` : null;
     this.pause = { until: now + ms, due: mono + ms, count, code: err.code, detail };
     this.data.pause = { until: now + ms, count, code: err.code, detail };
     this.log.warn(`Pstryk paused until ${clock(now + ms)} (${detail ?? err.code})`);
     await this.save();
+  }
+
+  /**
+   * The longest pause: 6 hours, but an hour for a 5xx while no price of the
+   * current hour is held (an outage lasting past midnight: today's prices are
+   * looked for hourly, never 6 hours late). A 429 keeps what was asked.
+   */
+  serverCap(code, now) {
+    return code === 'server' && this.priceAt(now) === undefined ? HOUR : PAUSE_MAX;
+  }
+
+  /** At every hour: a 5xx pause longer than its cap now is shortened (the next read sooner). */
+  async capPause(gen) {
+    if (!this.pause || this.pause.code !== 'server') return;
+    const now = this.now();
+    const mono = this.monotonic();
+    const cap = this.serverCap('server', now);
+    if (this.pause.due - mono <= cap) return;
+    this.pause = { ...this.pause, until: now + cap, due: mono + cap };
+    this.data.pause = { ...this.data.pause, until: now + cap };
+    await this.save();
+    if (!this.gone(gen) && this.roundTimer) this.schedule(gen);
   }
 
   /** A request answered: the pause is over and its count forgotten. */
@@ -777,7 +888,8 @@ export class PstrykApp {
     const now = this.now();
     // The attempt is kept BEFORE anything: a restart never reads sooner.
     this.freshConfig = false;
-    this.lastPricesMono = this.monotonic();
+    const startMono = this.monotonic();
+    this.lastPricesMono = startMono;
     this.data.lastPrices = now;
     await this.save();
     if (this.gone(gen)) return;
@@ -796,7 +908,10 @@ export class PstrykApp {
     this.failures = 0;
     this.lastError = undefined;
     this.data.lastPricesOk = this.now();
+    const tomorrow = addDays(now, 1);
+    const heldBefore = this.covered(tomorrow, addDays(tomorrow, 1));
     this.record(parsed);
+    this.afterRecentRead(startMono, now, heldBefore);
     this.prune();
     await this.save();
     if (this.gone(gen)) return;
@@ -843,12 +958,16 @@ export class PstrykApp {
   /** Prices kept in /data; an hour already started keeps the price kept for it. */
   record({ buy, sell }) {
     const now = this.now();
+    let changed = 0;
     for (const [h, price] of buy) {
       const index = h / HOUR;
       if (h <= now && this.data.prices[index] !== undefined) continue;
       if (h > now + 3 * DAY) continue;
+      // An hour not started yet takes the value read again.
+      if (this.data.prices[index] !== undefined && this.data.prices[index] !== price) changed += 1;
       this.data.prices[index] = price;
     }
+    if (changed) this.log.warn(`Pstryk changed the price of ${changed} hour(s) to come: replaced`);
     for (const [h, price] of sell) {
       if (h + HOUR <= now - DAY || h > now + 3 * DAY) continue;
       this.data.sell[h / HOUR] = price;
@@ -1011,7 +1130,12 @@ export class PstrykApp {
     return (Array.isArray(intervals) ? intervals : []).map(({ starts_at: startsAt, kwh }) => {
       const t0 = Date.parse(startsAt);
       const price = Number.isFinite(t0) && t0 % HALF_HOUR === 0 ? this.priceAt(t0) : undefined;
-      if (price === undefined || !finite(kwh) || kwh < 0) {
+      if (!finite(kwh) || kwh < 0) {
+        throw new Error(`Not a consumption for ${String(startsAt).slice(0, 40)}`);
+      }
+      // Nothing consumed costs 0 whatever the price (nothing guessed).
+      if (kwh === 0) return { starts_at: startsAt, cost: 0, label: 'Pstryk' };
+      if (price === undefined) {
         throw new Error(`No Pstryk price known for ${String(startsAt).slice(0, 40)}`);
       }
       const cost = Math.max(0, kwh * price);
@@ -1096,13 +1220,20 @@ export class PstrykApp {
 
   // --- Test button ------------------------------------------------------------------------
 
+  /** "Not sent" during a pause: asked by Pstryk (429) or Pstryk unavailable (5xx). */
+  pausedText() {
+    return both(this.pause.code === 'rate_limited' ? 'testPaused' : 'testServer', {
+      time: clock(this.pause.until),
+    });
+  }
+
   /** One read of the prices of this hour: lifts a refusal on success. */
   async testConnection() {
     if (this.config.problem) return both(this.config.problem);
     const mono = this.monotonic();
     if (this.lastTest !== undefined && mono - this.lastTest < TEST_MIN_GAP)
       return both('testTooSoon');
-    if (this.pauseActive(mono)) return both('testPaused', { time: clock(this.pause.until) });
+    if (this.pauseActive(mono)) return this.pausedText();
     const session = this.session;
     if (!session) return both('missing');
     const gen = this.gen;
@@ -1138,7 +1269,7 @@ export class PstrykApp {
         message = both('refused', { code: this.refused.status });
       } else if (PAUSING.has(code)) {
         await this.setPause(err);
-        message = both('testPaused', { time: clock(this.pause.until) });
+        message = this.pausedText();
       } else {
         message = both('testFailed', { code: codeOf(err) });
       }

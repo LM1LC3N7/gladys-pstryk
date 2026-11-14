@@ -50,6 +50,8 @@ test('the request: the key alone in Authorization, UTC instants without millisec
     /^gladys-pstryk\/\d+\.\d+\.\d+ \(\+https:\/\/github\.com\/LM1LC3N7\/gladys-pstryk\)$/,
   );
   assert.equal(call.method, 'GET');
+  // A redirect is never followed (the key would go with it).
+  assert.equal(call.redirect, 'error');
   assert.deepEqual(call.query, {
     metrics: 'pricing',
     resolution: 'hour',

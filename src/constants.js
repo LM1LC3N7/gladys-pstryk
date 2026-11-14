@@ -39,6 +39,14 @@ export const PRICES_INTERVAL = HOUR;
 /** Tomorrow's prices are looked for from 14:00, Polish time (the day-ahead market is out by then). */
 export const PRICES_HOUR = 14;
 /**
+ * Tomorrow's prices, once first kept, are read once more to confirm them
+ * (a provisional answer is replaced in the hours not started yet): 3 hours
+ * later, aiming before 23:00 Polish time, never sooner than an hour.
+ */
+export const CONFIRM_DELAY = 3 * HOUR;
+export const CONFIRM_MIN = HOUR;
+export const CONFIRM_BEFORE_HOUR = 23;
+/**
  * Past hours without a price (an outage, a 429, a stop of Gladys) are read
  * again, as far back as the core may ask (31 days), at most every 6 hours, by
  * windows of 16 days (384 hours).
@@ -63,6 +71,8 @@ export const PAUSE_MIN = MINUTE;
 export const PAUSE_MAX = 6 * HOUR;
 /** The test button answers at most once a minute with a new request. */
 export const TEST_MIN_GAP = MINUTE;
+/** /data unreadable: the last reads are unknown; a read waits this long (or its interval when shorter). */
+export const UNREADABLE_WAIT = 5 * MINUTE;
 /** A new device or a new key are read soon, never sooner than this after a read. */
 export const CREATED_MIN_GAP = MINUTE;
 /** The config is read again after a failure: 5 s doubled up to 5 minutes, for ever. */

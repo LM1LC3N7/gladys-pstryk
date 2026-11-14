@@ -60,6 +60,22 @@ authentication credentials."}` (seen on 2026-11-14 with a made-up key;
   already started keeps the price first kept (a retry gets the same answer).
   Prices kept 40 days in `/data`; the sale price (`price_prosumer_gross`) a
   day, for the feature only.
+- **Confirmation read** (review r1): tomorrow's prices, once first kept, are
+  read once more 3 hours later (aiming before 23:00, at least an hour later);
+  the hours not started yet take the values read again (a change is logged),
+  an hour started keeps its price. One more request a day.
+- **5xx pause capped to an hour while no price of the current hour is held**
+  (an outage past midnight); otherwise 5 min doubled to 6 h. A 429 keeps its
+  `Retry-After` or 15 min doubled to 6 h.
+- **`/data` unreadable at a start**: the reads wait 5 minutes from the first
+  start (their interval when shorter), never at once, never an hour.
+- **0 kWh costs 0** whatever the price (nothing guessed); an unknown price of
+  a consumed interval fails the request.
+- **Device name "Pstryk"**: the SDK gives no language for Discovery; the
+  feature names stay in English.
+- **Per-kWh supplement** (review r1, m3): if `price_gross` turns out to leave
+  out the variable distribution, add a template input "supplement per kWh"
+  (0 by default) applied by `energyPrice`. Decided once confirmed.
 - **Export not priced**: the core prices consumption only; the sale price is
   a feature.
 - **Another key in the running process** drops the prices, the backfill marker

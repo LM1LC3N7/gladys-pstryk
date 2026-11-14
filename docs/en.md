@@ -11,7 +11,7 @@ your account.
 
 ## What you get
 
-- **One device**, "Pstryk electricity", offered in Discovery once Pstryk has
+- **One device**, "Pstryk", offered in Discovery once Pstryk has
   answered your key:
   - **Price per kWh now (PLN)** and **Next price per kWh (PLN)**: the gross
     price (VAT included) Pstryk gives for the current hour and the next one,
@@ -48,32 +48,48 @@ to Pstryk (api.pstryk.pl), in the `Authorization` header of each request.
 
 - The recent prices (yesterday to the end of tomorrow): when the ones held do
   not cover the rest of today (or, from 14:00 Polish time, the whole of
-  tomorrow), at most once an hour. Once tomorrow is held, nothing until 14:00
-  the next day.
+  tomorrow), at most once an hour. Tomorrow's prices, once first kept, are
+  read once more to confirm them (3 hours later, aiming before 23:00, at least
+  an hour later): the hours not started yet take the values read again. Then
+  nothing until 14:00 the next day.
 - The missing past prices (after a stop, an outage): up to 31 days back, at
   most every 6 hours.
 - The consumption, once you added the device: every 3 hours (the last 3
   days), once a day after 06:00 and for a new device the last 7 days.
 - After a failed read of the prices: again after 5, 10, 20, 40, then every 60
-  minutes. Pstryk asking to slow down (HTTP 429, its `Retry-After` honoured)
-  or being unavailable (5xx): no request at all until the time asked (at
-  least 1 minute, at most 6 hours), kept across restarts.
+  minutes.
+- Pstryk asking to slow down (HTTP 429): no request at all for the time its
+  `Retry-After` asks, else 15 minutes, doubled at each new 429 (30, 60, 120…),
+  at most 6 hours. Pstryk unavailable (5xx): no request for 5 minutes, doubled
+  at each new 5xx, at most 6 hours, or at most 1 hour while no price of the
+  current hour is held (an outage lasting past midnight). Pauses are kept
+  across restarts: after a long outage the next read may wait up to 6 hours.
 - A restart, Discovery or saving the configuration never reads sooner than
-  these intervals (a new key is read after 1 minute). One request at a time,
-  2 seconds apart at least.
+  these intervals (a new key is read after 1 minute). When `/data` cannot be
+  read at a start, the last reads are unknown: the first read waits 5
+  minutes. One request at a time, 2 seconds apart at least.
 
 ## What the prices are
 
 For each hour, Pstryk's API gives the gross price per kWh of your contract
-(`price_gross`, VAT included). The integration keeps it as given; whether it
-includes the variable distribution charges and the excise is Pstryk's choice
-(the price shown in the Pstryk app). The prices of the past hours are kept 40
-days in `/data`, so Gladys can price the past intervals.
+(`price_gross`, VAT included). The integration keeps it as given. What it
+includes (the energy only, or the variable distribution charges and the
+excise too) is not confirmed on a real account yet: if it leaves out the
+variable distribution, the cost shown by Gladys is below your bill. The
+prices of the past hours are kept 40 days in `/data`, so Gladys can price the
+past intervals; an interval older than the prices kept (a contract created
+with a start date long ago) gets no cost. The template is for Pstryk's
+dynamic price only: a fixed-price contract (the same price every hour) is
+never priced.
 
-Never a guessed price, never an unknown price counted 0. A Polish day is kept
-only whole: every one of its hours priced (23 or 25 on the days the clocks
-change), and not one value repeated over almost the whole day (what Pstryk may answer before tomorrow's
-prices are published). When one hour of a billing period has no price,
+An unknown price is never counted 0 (a half hour where nothing was consumed
+costs 0 whatever the price). Provisional prices are filtered by a rule that
+is not confirmed on a real account: a Polish day is kept only whole (every
+one of its hours priced, 23 or 25 on the days the clocks change) and not one
+value repeated over more than 90 % of it (what Pstryk may answer before
+tomorrow's prices are published); a provisional answer that passes this rule
+is replaced by the confirmation read in the hours not started yet, an hour
+already started keeps the price kept for it. When one hour of a billing period has no price,
 Gladys's whole request for that period fails and no cost is stored for it
 until the price is known: the integration reads the missing past days again
 (up to 31 days back, at most every 6 hours), for instance after Gladys was

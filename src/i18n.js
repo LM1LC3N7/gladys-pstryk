@@ -4,7 +4,7 @@
 // -----------------------------------------------------------------------------
 
 const TEXTS = {
-  device: { en: 'Pstryk electricity', fr: 'Pstryk électricité' },
+  device: { en: 'Pstryk', fr: 'Pstryk' },
   featurePrice: { en: 'Price per kWh now (PLN)', fr: 'Prix du kWh actuel (PLN)' },
   featureNextPrice: { en: 'Next price per kWh (PLN)', fr: 'Prochain prix du kWh (PLN)' },
   featureSellPrice: {
@@ -83,6 +83,10 @@ const TEXTS = {
   testPaused: {
     en: 'Not sent: Pstryk asked to wait until {time}.',
     fr: 'Rien envoyé : Pstryk a demandé d’attendre jusqu’à {time}.',
+  },
+  testServer: {
+    en: 'Not sent: Pstryk is unavailable, no request until {time}.',
+    fr: 'Rien envoyé : Pstryk est indisponible, aucune requête avant {time}.',
   },
   testFailed: {
     en: 'Pstryk could not be read ({code}): nothing changed.',
