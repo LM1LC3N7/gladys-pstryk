@@ -1,67 +1,120 @@
-# Template de démonstration
+# Pstryk
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Intégration non officielle pour les clients d'électricité de **Pstryk** en
+Pologne, sans lien avec Pstryk. Elle lit vos propres données par l'API
+d'intégration officielle de Pstryk (api.pstryk.pl). **Lecture seule** : rien
+n'est jamais modifié sur votre compte.
+
+> Cette intégration n'a jamais été testée avec un vrai compte Pstryk : elle a
+> été écrite d'après la description officielle de l'API. Merci de signaler ce
+> que vous observez (issues GitHub de LM1LC3N7/gladys-pstryk).
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+- **Un appareil**, « Pstryk électricité », proposé dans la Découverte dès que
+  Pstryk a répondu à votre clé :
+  - **Prix du kWh actuel (PLN)** et **Prochain prix du kWh (PLN)** : le prix
+    brut (TVA incluse) que Pstryk donne pour l'heure en cours et la suivante,
+    en złotys par kWh. Gladys n'a pas d'unité złoty : les fonctionnalités
+    affichent le nombre seul.
+  - **Prix de vente du kWh actuel (PLN, prosommateur)** : le prix que Pstryk
+    donne pour l'énergie que vous injectez pendant l'heure en cours, quand il
+    en donne un.
+  - **Consommation (30 min)** : la consommation de votre compteur, publiée
+    après coup pour le suivi énergétique de Gladys. Pstryk donne des heures :
+    chaque heure est coupée en deux moitiés égales. L'heure en cours n'est
+    jamais publiée.
+- **Le modèle de contrat d'énergie « Prix dynamique Pstryk »** : Gladys
+  demande à l'intégration le coût de chaque demi-heure ; elle répond la
+  consommation multipliée par le prix brut de cette heure. Une heure dont le
+  prix est négatif coûte 0 (Gladys n'accepte aucun coût négatif) : le coût
+  affiché par Gladys est alors au-dessus de votre facture du crédit, si Pstryk
+  en accorde un. L'énergie que vous injectez n'est pas créditée (Gladys ne
+  tarifie que la consommation). Les frais fixes mensuels (abonnement, part
+  fixe de la distribution, redevance de capacité) sont un montant que vous
+  saisissez dans le contrat.
 
-## Configuration
+## Mise en place
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+1. Dans l'**application Pstryk**, créez une **clé d'API** pour les
+   intégrations et copiez-la.
+2. Dans Gladys, ouvrez la **Configuration** de l'intégration, collez la clé
+   et enregistrez. **Tester la connexion** lit avec elle le prix de l'heure en
+   cours.
+3. Dans la **Découverte**, ajoutez l'appareil « Pstryk électricité ».
+4. Dans les réglages énergie, créez un contrat depuis le modèle **Prix
+   dynamique Pstryk**, rattaché à la consommation de cet appareil, et
+   saisissez vos frais fixes par mois (TVA incluse, d'après votre facture).
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+La clé d'API est gardée par Gladys dans sa base, jamais réaffichée et envoyée
+seulement à Pstryk (api.pstryk.pl), dans l'en-tête `Authorization` de chaque
+requête.
 
-## Actions
+## Fréquence des lectures
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+- Les prix récents (d'hier à la fin de demain) : quand ceux qui sont connus ne
+  couvrent pas le reste de la journée (ou, à partir de 14 h heure polonaise,
+  toute la journée de demain), au plus une fois par heure. Une fois demain
+  connu, plus rien avant 14 h le lendemain.
+- Les prix passés manquants (après un arrêt, une panne) : jusqu'à 31 jours en
+  arrière, au plus toutes les 6 heures.
+- La consommation, une fois l'appareil ajouté : toutes les 3 heures (les 3
+  derniers jours), une fois par jour après 6 h et pour un nouvel appareil les
+  7 derniers jours.
+- Après une lecture des prix en échec : nouvel essai après 5, 10, 20, 40, puis
+  toutes les 60 minutes. Pstryk qui demande de ralentir (HTTP 429, son
+  `Retry-After` respecté) ou indisponible (5xx) : aucune requête jusqu'à
+  l'heure demandée (au moins 1 minute, au plus 6 heures), gardée d'un
+  redémarrage à l'autre.
+- Un redémarrage, la Découverte ou l'enregistrement de la configuration ne
+  lisent jamais plus tôt que ces intervalles (une nouvelle clé est lue après 1
+  minute). Une requête à la fois, espacées d'au moins 2 secondes.
 
-## Scènes
+## Ce que sont les prix
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+Pour chaque heure, l'API de Pstryk donne le prix brut du kWh de votre contrat
+(`price_gross`, TVA incluse). L'intégration le garde tel quel ; qu'il comprenne
+la part variable de la distribution et l'accise dépend de Pstryk (le prix
+affiché dans l'application Pstryk). Les prix des heures passées sont gardés 40
+jours dans `/data`, pour que Gladys puisse tarifer les intervalles passés.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Jamais de prix deviné, jamais un prix inconnu compté 0. Une journée polonaise
+n'est gardée qu'entière : chacune de ses heures a un prix (23 ou 25 les jours
+de changement d'heure), et ce n'est pas une même valeur répétée sur presque
+toute la journée
+(ce que Pstryk peut répondre avant la publication des prix de demain). Quand
+une heure d'une période de facturation n'a pas de prix, toute la demande de
+Gladys pour cette période échoue et aucun coût n'est enregistré tant que le
+prix n'est pas connu : l'intégration relit les jours passés manquants
+(jusqu'à 31 jours en arrière, au plus toutes les 6 heures), par exemple après
+un arrêt de Gladys ; un jour que Pstryk ne donne jamais laisse ces coûts vides.
 
-## Tableau de bord
+Une autre clé d'API (peut-être un autre compte, avec un autre tarif de
+distribution) efface les prix connus et les relit. Après un redémarrage, les
+prix gardés dans `/data` restent quelle que soit la clé : changez la clé
+pendant que Gladys tourne.
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+## Messages
 
-## Dépannage
+- _Pstryk a refusé la clé d'API_ : Pstryk a répondu 401 ou 403 en disant que
+  la clé est mauvaise (« Incorrect authentication credentials. »). Plus rien
+  n'est envoyé tant que vous ne changez pas la clé ou que le bouton
+  **Tester** ne réussit pas. Toute autre réponse (un 403 qui dit autre chose,
+  une réponse illisible, un 404, un 5xx) n'est jamais prise pour un refus :
+  elle est réessayée plus tard.
+- _Aucun prix d'aujourd'hui n'est encore connu_ : le contrat d'énergie n'est
+  pas tarifé en attendant.
+- _Pstryk n'a pas donné de prix complets pour certains jours passés_ :
+  certains des 31 derniers jours n'ont pas pu être complétés. Les prix
+  d'aujourd'hui et de demain ne sont pas touchés ; les coûts de la période de
+  facturation de ces jours restent vides (redemandés toutes les 6 heures).
+- _Consommation non lue_ : les prix continuent ; la consommation est
+  redemandée 3 heures plus tard.
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+## Confidentialité
+
+La clé d'API n'est jamais écrite dans un journal, le statut ni `/data`.
+`/data` garde les heures des dernières lectures, la pause, les prix horaires et
+une marque de clé refusée (8 bits d'une empreinte salée, rien qui permette de
+retrouver la clé). L'identifiant de l'appareil ne contient rien de la clé, du
+compteur ni du client.

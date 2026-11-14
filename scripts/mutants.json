@@ -1,0 +1,218 @@
+[
+  {
+    "name": "refusal on any 401/403",
+    "file": "src/pstryk/client.js",
+    "from": "  (status === 401 || status === 403) &&\n  typeof body?.detail === 'string' &&\n  REFUSED.has(body.detail);",
+    "to": "  status === 401 || status === 403;"
+  },
+  {
+    "name": "a non-401/403 with the refusal text taken as a refusal",
+    "file": "src/pstryk/client.js",
+    "from": "  (status === 401 || status === 403) &&\n  typeof body?.detail",
+    "to": "  typeof body?.detail"
+  },
+  {
+    "name": "body read whole",
+    "file": "src/pstryk/client.js",
+    "from": "    if (size > max) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "no gap between requests",
+    "file": "src/pstryk/client.js",
+    "from": "if (wait > 0 && this.sleep) await this.sleep(wait);",
+    "to": ""
+  },
+  {
+    "name": "a refusal still schedules reads",
+    "file": "src/app.js",
+    "from": "    if (!this.session || this.isRefused()) {\n      this.dueMono = undefined;",
+    "to": "    if (!this.session) {\n      this.dueMono = undefined;"
+  },
+  {
+    "name": "the pause ignored by the schedule",
+    "file": "src/app.js",
+    "from": "    if (this.pause) due = Math.max(due, this.pause.due);",
+    "to": ""
+  },
+  {
+    "name": "a restart reads at once",
+    "file": "src/app.js",
+    "from": "      ? mono + Math.max(0, interval - (now - lastWall))",
+    "to": "      ? mono"
+  },
+  {
+    "name": "a time of /data in the future taken",
+    "file": "src/app.js",
+    "from": "        data[key] <= now &&\n",
+    "to": "        true &&\n"
+  },
+  {
+    "name": "the failures in a row forgotten at a restart",
+    "file": "src/app.js",
+    "from": "      this.failures = Math.min(data.failures, 16);",
+    "to": "      this.failures = 0;"
+  },
+  {
+    "name": "prices asked at every round while missing",
+    "file": "src/app.js",
+    "from": "        : PRICES_INTERVAL;",
+    "to": "        : 0;"
+  },
+  {
+    "name": "prices asked again once all held",
+    "file": "src/app.js",
+    "from": "    return Math.max(due, mono + (at - now));",
+    "to": "    return due;"
+  },
+  {
+    "name": "a started hour repriced",
+    "file": "src/app.js",
+    "from": "      if (h <= now && this.data.prices[index] !== undefined) continue;",
+    "to": ""
+  },
+  {
+    "name": "a negative price gives a negative cost",
+    "file": "src/app.js",
+    "from": "const cost = Math.max(0, kwh * price);",
+    "to": "const cost = kwh * price;"
+  },
+  {
+    "name": "an interval off the half hour priced",
+    "file": "src/app.js",
+    "from": "Number.isFinite(t0) && t0 % HALF_HOUR === 0 ? this.priceAt(t0) : undefined;",
+    "to": "Number.isFinite(t0) ? this.priceAt(t0) : undefined;"
+  },
+  {
+    "name": "an unknown price guessed 0",
+    "file": "src/app.js",
+    "from": "      if (price === undefined || !finite(kwh) || kwh < 0) {",
+    "to": "      if (!finite(kwh) || kwh < 0) {"
+  },
+  {
+    "name": "/data overwritten while unreadable",
+    "file": "src/app.js",
+    "from": "    if (this.storeState !== 'ok') return false;\n    const snapshot",
+    "to": "    const snapshot"
+  },
+  {
+    "name": "a future pause in /data not capped",
+    "file": "src/app.js",
+    "from": "const left = Math.min(Math.max(0, pause.until - now), PAUSE_MAX);",
+    "to": "const left = Math.max(0, pause.until - now);"
+  },
+  {
+    "name": "Retry-After not capped",
+    "file": "src/app.js",
+    "from": "const ms = Math.min(PAUSE_MAX, Math.max(PAUSE_MIN, asked, base * 2 ** (count - 1)));",
+    "to": "const ms = Math.max(PAUSE_MIN, asked, base * 2 ** (count - 1));"
+  },
+  {
+    "name": "past holes never read again",
+    "file": "src/app.js",
+    "from": "    return this.dueOf(this.lastHolesMono, this.data.lastHoles, HOLES_INTERVAL, mono, now);",
+    "to": "    return Infinity;"
+  },
+  {
+    "name": "past holes read at every round",
+    "file": "src/app.js",
+    "from": "    return this.dueOf(this.lastHolesMono, this.data.lastHoles, HOLES_INTERVAL, mono, now);",
+    "to": "    return mono;"
+  },
+  {
+    "name": "past holes read right after a test",
+    "file": "src/app.js",
+    "from": "if (!finite(this.data.lastPricesOk) || this.freshConfig || this.firstHole(now) === undefined) {",
+    "to": "if (this.firstHole(now) === undefined) {"
+  },
+  {
+    "name": "another key keeps the old prices",
+    "file": "src/app.js",
+    "from": "      if (another && config.apiKey) this.forgetAccount();",
+    "to": ""
+  },
+  {
+    "name": "another key stays refused",
+    "file": "src/app.js",
+    "from": "      if (this.refused) {\n        this.refused = undefined;\n        this.data.refused = null;\n      }\n    }\n    this.config = config;",
+    "to": "    }\n    this.config = config;"
+  },
+  {
+    "name": "the Test button never lifts a refusal",
+    "file": "src/app.js",
+    "from": "        this.refused = undefined;\n        this.data.refused = null;\n        this.freshConfig = true;",
+    "to": "        this.freshConfig = true;"
+  },
+  {
+    "name": "Test more than once a minute",
+    "file": "src/app.js",
+    "from": "if (this.lastTest !== undefined && mono - this.lastTest < TEST_MIN_GAP)",
+    "to": "if (false)"
+  },
+  {
+    "name": "a partial day kept",
+    "file": "src/pstryk/model.js",
+    "from": "    if (!whole || flat(prices)) {",
+    "to": "    if (flat(prices)) {"
+  },
+  {
+    "name": "a flat day kept",
+    "file": "src/pstryk/model.js",
+    "from": "    if (!whole || flat(prices)) {",
+    "to": "    if (!whole) {"
+  },
+  {
+    "name": "two prices of one hour: one kept",
+    "file": "src/pstryk/model.js",
+    "from": "  for (const at of conflicts) values.delete(at);",
+    "to": ""
+  },
+  {
+    "name": "an hour not ended published",
+    "file": "src/pstryk/model.js",
+    "from": "    if (frame.is_live === true || at + HOUR > now) continue;",
+    "to": "    if (frame.is_live === true) continue;"
+  },
+  {
+    "name": "a live hour published",
+    "file": "src/pstryk/model.js",
+    "from": "    if (frame.is_live === true || at + HOUR > now) continue;",
+    "to": "    if (at + HOUR > now) continue;"
+  },
+  {
+    "name": "an empty text read as 0",
+    "file": "src/pstryk/model.js",
+    "from": "  if (typeof value === 'string' && /^-?\\d{1,6}(\\.\\d{1,10})?$/.test(value)) return Number(value);",
+    "to": "  if (typeof value === 'string') return Number(value);"
+  },
+  {
+    "name": "a price beyond the bound kept",
+    "file": "src/pstryk/model.js",
+    "from": "    if (buy !== undefined && Math.abs(buy) <= MAX_PRICE) buyIn.push([at, round(buy)]);",
+    "to": "    if (buy !== undefined) buyIn.push([at, round(buy)]);"
+  },
+  {
+    "name": "a key with a control character sent",
+    "file": "src/config.js",
+    "from": "  } else if (trimmed.length > 200 || !KEY_TEXT.test(trimmed)) {",
+    "to": "  } else if (trimmed.length > 200) {"
+  },
+  {
+    "name": "instant without zone accepted",
+    "file": "src/time.js",
+    "from": "(Z|[+-]\\d{2}:\\d{2})$/.test(value)) {",
+    "to": "(Z|[+-]\\d{2}:\\d{2})?$/.test(value)) {"
+  },
+  {
+    "name": "the consumption failing stops the prices",
+    "file": "src/app.js",
+    "from": "      if (STOPPING.has(err?.code)) throw err;\n      // The consumption failing never stops the prices.",
+    "to": "      throw err;\n      // The consumption failing never stops the prices."
+  },
+  {
+    "name": "a stale result of an older start kept (both generation checks of the recent read gone)",
+    "file": "src/app.js",
+    "from": "      if (this.gone(gen)) return;\n      parsed = parsePricing(body);\n      if (!parsed) throw new PstrykError('bad_response');\n    } catch (err) {\n      this.failures = Math.min(this.failures + 1, 16);\n      throw err;\n    }\n    await this.clearPause();\n    if (this.gone(gen)) return;\n    this.failures = 0;",
+    "to": "      parsed = parsePricing(body);\n      if (!parsed) throw new PstrykError('bad_response');\n    } catch (err) {\n      this.failures = Math.min(this.failures + 1, 16);\n      throw err;\n    }\n    await this.clearPause();\n    this.failures = 0;"
+  }
+]
